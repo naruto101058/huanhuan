@@ -43,6 +43,7 @@ def main():
         attention_mask = instruction["attention_mask"] + response["attention_mask"]
         labels = [-100] * len(instruction["input_ids"]) + response["input_ids"]
         if len(input_ids) > MAX_LENGTH:
+            print("长度：",len(input_ids))
             input_ids = input_ids[:MAX_LENGTH]
             attention_mask = attention_mask[:MAX_LENGTH]
             labels = labels[:MAX_LENGTH]
@@ -66,9 +67,8 @@ def main():
     dataset = dataset["train"].train_test_split(test_size=0.1)
     train_data = dataset["train"].map(process_func, remove_columns=dataset["train"].column_names)
     test_data = dataset["test"].map(process_func, remove_columns=dataset["test"].column_names)
-    print(tokenizer.decode(train_data[0]["input_ids"]))
-    decoded_labels = [token_id for token_id in train_data[0]["labels"] if token_id >= 0]
-    print(tokenizer.decode(decoded_labels))
+    # print(tokenizer.decode(train_data[0]["input_ids"]))
+    # print(tokenizer.decode(train_data[0]["labels"]))
     # class AutocastSFTTrainer(SFTTrainer):
     #     def compute_loss(self, model, inputs, return_outputs=False, **kwargs):
     #         # 解决 bf16 开启时，部分模型层仍是 float32 导致的 mat1 and mat2 dtype mismatch 问题
@@ -76,7 +76,7 @@ def main():
     #             return super().compute_loss(model, inputs, return_outputs, **kwargs)
     training_args = SFTConfig(
         output_dir="./output/qwen_4b_lora",
-        per_device_train_batch_size=4,
+        per_device_train_batch_size=2,
         gradient_accumulation_steps=4,
         logging_steps=10,
         num_train_epochs=3,
