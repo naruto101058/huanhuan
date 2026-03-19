@@ -1,0 +1,33 @@
+[project]
+name = "huanhuan"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "accelerate",
+    "torch",
+    "safetensors",
+    "bitsandbytes",
+    "scipy",
+    "peft",
+    "trl",
+    "transformers",
+    "tqdm",
+    "packaging",
+    "pytest",
+    "numpy",
+    "pyyaml",
+    "datasets",
+    "psutil",
+    "setuptools",
+    "ninja>=1.13.0",
+    "flash-attn",
+]
+[tool.uv]
+no-build-isolation-package = ["flash-attn"]
+
+[tool.uv.pip]
+index-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+[tool.uv.extra-build-dependencies]
+flash-attn = ["torch"]
