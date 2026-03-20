@@ -31,28 +31,16 @@ def main():
         bnb_4bit_use_double_quant=True,
         bnb_4bit_quant_storage=torch.uint8,
     )
-    tokenizer = AutoTokenizer.from_pretrained('Qwen/Qwen3.5-4B',trust_remote_code=True,cache_dir="model/qwen")
+    tokenizer = AutoTokenizer.from_pretrained('Qwen/Qwen3.5-4B',trust_remote_code=True)
     tokenizer.pad_token = tokenizer.eos_token
     # 恢复使用 flash_attention_2 (RTX 3090 支持)，确保 torch_dtype 为 bfloat16
-    model = AutoModelForCausalLM.from_pretrained("Qwen/Qwen3.5-4B", trust_remote_code=True,dtype=torch.bfloat16,attn_implementation="flash_attention_2",quantization_config=bnb_config,cache_dir="model/qwen")
+    model = AutoModelForCausalLM.from_pretrained("Qwen/Qwen3.5-4B", trust_remote_code=True,dtype=torch.bfloat16,attn_implementation="flash_attention_2",quantization_config=bnb_config)
     model.enable_input_require_grads()
     def process_func(example):
         MAX_LENGTH = 384
         input_ids, attention_mask, labels = [], [], []
-        # 使用 apply_chat_template 确保遵循 Qwen 的标准格式，并且特殊 token 被正确处理
-        messages = [
-            {"role": "system", "content": "你现在要扮演皇帝的女人甄嬛"},
-            {"role": "user", "content": example["instruction"]},
-            {"role": "assistant", "content": example["output"]}
-        ]
-        
-        # 将消息转换为带特殊 token 的完整输入文本
-        prompt = tokenizer.apply_chat_template(messages[:-1], tokenize=False, add_generation_prompt=True)
-        response_text = example["output"] + "<|im_end|>\n"
-        
-        # 分别对 instruction (不计入 loss) 和 response 进行 tokenize
-        instruction = tokenizer(prompt, add_special_tokens=False)
-        response = tokenizer(response_text, add_special_tokens=False)
+        instruction = tokenizer("<|im_start|>system\n你现在要扮演皇帝的女人甄嬛<|im_end|>\n"+"<|im_start|>user\n"+example["instruction"]+"<|im_end|>\n"+"<|im_start|>assistant\n")
+        response = tokenizer(example["output"]+"<|im_end|>\n")
         input_ids = instruction["input_ids"] + response["input_ids"]
         attention_mask = instruction["attention_mask"] + response["attention_mask"]
         labels = [-100] * len(instruction["input_ids"]) + response["input_ids"]
@@ -77,8 +65,7 @@ def main():
     # model = get_peft_model(model, peft_config)
     dataset = load_dataset( "json" , data_files= "data/huanhuan.json" )
     # 划分训练集和测试集，test_size=0.1 表示测试集占 10%
-    # 务必添加 seed 保证每次划分一致，防止评估时验证集与训练集发生数据泄露
-    dataset = dataset["train"].train_test_split(test_size=0.1, seed=42)
+    dataset = dataset["train"].train_test_split(test_size=0.1)
     train_data = dataset["train"].map(process_func, remove_columns=dataset["train"].column_names)
     test_data = dataset["test"].map(process_func, remove_columns=dataset["test"].column_names)
     print(tokenizer.decode(train_data[0]["input_ids"]))
@@ -90,23 +77,17 @@ def main():
     #         with autocast(dtype=torch.bfloat16 if self.args.bf16 else torch.float16):
     #             return super().compute_loss(model, inputs, return_outputs, **kwargs)
     training_args = SFTConfig(
-        output_dir="./tuning/qwen_4b_lora",
-        per_device_train_batch_size=16,
+        output_dir="./output/qwen_4b_lora",
+        per_device_train_batch_size=4,
         gradient_accumulation_steps=4,
         logging_steps=10,
-        num_train_epochs=20,
+        num_train_epochs=3,
         save_steps=100, # 为了快速演示，这里设置10，建议你设置成100
-        learning_rate=5e-5,
-        lr_scheduler_type="cosine",
-        # warmup_ratio=0.1,
-        warmup_steps=0,
-        # save_on_each_node=True,
-        save_strategy="epoch",
+        learning_rate=1e-4,
+        save_on_each_node=True,
         gradient_checkpointing=True, # 必须与 bnb_4bit_compute_dtype 一致，开启混合精度训练
         gradient_checkpointing_kwargs={'use_reentrant': True}, # 修复 SavedTensorHooks 导致的 INTERNAL ASSERT FAILED 报错
         bf16=True, # 开启 bfloat16 混合精度 (RTX 3090 支持)
-        eval_strategy="steps",
-        eval_steps=100,
     )
     trainer = SFTTrainer(
         model=model,
@@ -116,15 +97,14 @@ def main():
         eval_dataset=test_data,
         peft_config=peft_config,
     )
-    # resume_from_checkpoint=True 会自动寻找 output_dir 下最新的 checkpoint 继续训练
-    trainer.train(resume_from_checkpoint=False)
-    # trainer.save_model(training_args.output_dir)
-    # #加载Lora模型
-    # p_model = PeftModel.from_pretrained(model, model_id=training_args.output_dir)
-    # value = "你是谁"
-    # ipt = tokenizer(f"<|im_start|>user\n{value}<|im_end|>\n<|im_start|>assistant\n", return_tensors="pt")
-    # output = tokenizer.decode(p_model.generate(**ipt, do_sample=False)[0], skip_special_tokens=True)
-    # print(output)
+    trainer.train()
+    trainer.save_model(training_args.output_dir)
+    #加载Lora模型
+    p_model = PeftModel.from_pretrained(model, model_id=training_args.output_dir)
+    value = "你是谁"
+    ipt = tokenizer(f"<|im_start|>user\n{value}<|im_end|>\n<|im_start|>assistant\n", return_tensors="pt")
+    output = tokenizer.decode(p_model.generate(**ipt, do_sample=False)[0], skip_special_tokens=True)
+    print(output)
     # merge_model = p_model.merge_and_unload()
     # merge_model.save_pretrained("./output/qwen_4b_lora_merge")
  
