@@ -23,6 +23,9 @@ dependencies = [
     "setuptools",
     "ninja>=1.13.0",
     "flash-attn",
+    "protobuf>=7.34.0",
+    "sentencepiece>=0.2.1",
+    "tiktoken>=0.12.0",
 ]
 [tool.uv]
 no-build-isolation-package = ["flash-attn"]
