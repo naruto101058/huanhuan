@@ -10,3 +10,4 @@ model/
 tuning/
 # Virtual environments
 .venv
+.pynb_checkpoints/
